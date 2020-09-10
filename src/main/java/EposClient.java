@@ -13,8 +13,8 @@ import java.nio.charset.StandardCharsets;
 
 public class EposClient {
     private static final int PORT = 8009;
-    private static final boolean BUFFER_ENABLED = true;
     private static final String TERMINATING_CHARACTER = "\0";
+    private static final boolean BUFFER_ENABLED = true;
 
     private Socket connection = null;
     private BufferedReader reader = null;
@@ -23,19 +23,20 @@ public class EposClient {
 
     private String ipAddress = "";
     private String deviceIDprinter = "";
-    private String deviceIDscanner = "";
     private boolean printerOpened = false;
-
     private boolean connecting = false;
+
     private boolean disconnecting = false;
     private boolean reconnecting = false;
     private boolean canceledReconnection = false;
     private String clientID = null;
     private String dataID = null;
+    private String dataToPrint = "";
 
-    public EposClient(String ipAddress, String deviceIDprinter) {
+    public EposClient(String ipAddress, String deviceIDprinter, String dataToPrint) {
         this.ipAddress = ipAddress;
         this.deviceIDprinter = deviceIDprinter;
+        this.dataToPrint = dataToPrint;
     }
 
     /**
@@ -53,14 +54,12 @@ public class EposClient {
 
             connecting = false;
             connection = null;
-//            enableButton(true);
             return;
         } catch (IOException ex) {
             appendConsole("Connecting to server failed due to io exception.");
             ex.printStackTrace();
             connecting = false;
             connection = null;
-//            enableButton(true);
             return;
         }
 
@@ -97,13 +96,11 @@ public class EposClient {
 
                     new Thread(this::onReceive).start();
 
+                    // Here we call open printer operation
                     openPrinter();
-                    // openScanner();
                 }
 
                 clientID = getChildren(doc, "client_id");
-
-                // Change connect button to disconnect button ????
                 connecting = false;
             } else {
                 appendConsole("Connect to server failed.");
@@ -173,24 +170,6 @@ public class EposClient {
         reconnecting = false;
 
         if (connection == null) {
-//            connectButton.setOnClickListener(new View.OnClickListener() {
-//                @Override
-//                public void onClick(View v) {
-//                    if (connecting == false) {
-//                        connecting = true;
-//                        connectButton.setEnabled(false);
-//                        new Thread(new Runnable() {
-//                            @Override
-//                            public void run() {
-//                                connect();
-//                            }
-//                        }).start();
-//                    }
-//                }
-//            });
-
-//            setTexttoButton("connect");
-//            enableButton(true);
             appendConsole("Canceled reconnection.");
         } else {
             String req = "<reconnect>" + "<data>"
@@ -298,30 +277,26 @@ public class EposClient {
                         }
 
                         new Thread(new Runnable() {
-
                             @Override
                             public void run() {
-                                print("This is an intentional message from the code. \nJose.");
+                                print(dataToPrint);
                             }
                         }).start();
                         break;
 
                     // Server and client exchange the data using device_data message.
                     case "device_data":
-//                    Input data from scanner
-//                    if (getChildren(doc, "type").equals("ondata")) {
-//                        appendOnData(getChildren(doc, "input"));
-//                    }
-
                         // Response of print request from printer
                         if (getChildren(doc, "type").equals("onxmlresult")) {
-                            Element el = (Element) doc.getElementsByTagName(
-                                    "response").item(0);
+                            Element el = (Element) doc.getElementsByTagName("response").item(0);
+
                             if (el.getAttribute("success").equals("true")) {
                                 appendConsole("device_data: Print success.");
                             } else {
                                 appendConsole("device_data: Print failed.");
                             }
+
+                            appendConsole("device_data response: \n" + el.toString());
                         }
                         break;
 
@@ -373,29 +348,8 @@ public class EposClient {
         try {
             writer.write(req);
             writer.flush();
-
         } catch (IOException ex) {
             appendConsole("Disconnected");
-            closeSocket();
-            ex.printStackTrace();
-        }
-    }
-
-    /**
-     * Send open_device message to use scanner.
-     */
-    public void openScanner() {
-        String req = "<open_device>"
-                + "<device_id>" + deviceIDscanner + "</device_id>"
-                + "<data>" + "<type>type_scanner</type>"
-                + "<buffer>" + BUFFER_ENABLED + "</buffer>"
-                + "</data>" + "</open_device>" + TERMINATING_CHARACTER;
-
-        try {
-            writer.write(req);
-            writer.flush();
-        } catch (IOException ex) {
-            appendConsole("Disconnected.");
             closeSocket();
             ex.printStackTrace();
         }
@@ -422,8 +376,7 @@ public class EposClient {
                 + "<timeout>10000</timeout>"
                 + "<printdata>"
                 + "<epos-print xmlns=\"http://www.epson-pos.com/schemas/2011/03/epos-print\">"
-                + "<text lang='ja' smooth='true'>Sample Print&#10;" + text
-                + "</text>"
+                + text
                 + "<cut type=\"feed\" />"
                 + "</epos-print>" + "</printdata>" + "</data>"
                 + "</device_data>" + TERMINATING_CHARACTER;
@@ -448,6 +401,7 @@ public class EposClient {
      */
     public String getChildren(Document doc, String tagName) {
         NodeList list = doc.getElementsByTagName(tagName);
+
         if (list.getLength() == 0) {
             return null;
         } else {
